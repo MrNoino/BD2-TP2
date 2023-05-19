@@ -1,0 +1,6 @@
+*.log
+tempCodeRunnerFile.py
+__pycache__/
+*.dat
+env.py
+db_env.py
