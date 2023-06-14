@@ -1,5 +1,5 @@
 import  psycopg2, psycopg2.extras
-import os, db_env
+import os, db_env, http_codes
 
 def generic_select(query, parameters = None):
 
@@ -16,12 +16,26 @@ def generic_select(query, parameters = None):
         cur.close()
         conn.close()
 
-        return data
-    
-    except Exception as e:
+        if not data:
 
+            return {"code": http_codes.NOT_FOUND}
+
+        return {"code": http_codes.OK, "data": data}
+    
+    except psycopg2.Error as e:
+
+        error = e.pgerror.splitlines()[0]
         print(e)
-        return None
+
+        if '403' in error:
+
+            return {'code': http_codes.FORBIDDEN}
+        
+        elif '404' in error:
+
+            return {'code': http_codes.NOT_FOUND}
+        
+        return {'code': http_codes.INTERNAL_SERVER_ERROR}
 
 
 def generic_manipulation(query, parameters = None):
@@ -38,10 +52,21 @@ def generic_manipulation(query, parameters = None):
         cur.close()
         conn.close()
 
-        return True
+        return {'code': http_codes.OK}
     
-    except Exception as e:
+    except psycopg2.Error as e:
         
         conn.rollback()
+        error = e.pgerror.splitlines()[0]
         print(e)
-        return False
+
+        if '403' in error:
+
+            return {'code': http_codes.FORBIDDEN}
+        
+
+        elif '404' in error:
+
+            return {'code': http_codes.NOT_FOUND}
+        
+        return {'code': http_codes.INTERNAL_SERVER_ERROR}

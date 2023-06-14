@@ -2,21 +2,7 @@ from flask import Flask, jsonify, request
 import db_wrapper, jwt 
 from functools import wraps
 from datetime import datetime, timedelta
-import os, env
-
-OK = 200
-
-NOT_FOUND = 404
-
-BAD_REQUEST = 400
-
-UNAUTHORIZED = 401
-
-FORBIDDEN = 403
-
-INTERNAL_SERVER_ERROR = 500
-
-METHOD_NOT_ALLOWED = 405
+import os, env, http_codes
 
 app = Flask(__name__)
 
@@ -32,11 +18,11 @@ def auth_user(func):
 
         else:
 
-            return jsonify({'Erro': 'Token está em falta!'}), BAD_REQUEST
+            return jsonify({'Erro': 'Token está em falta!'}), http_codes.BAD_REQUEST
 
         if not token:
 
-            return jsonify({'Erro': 'Token está em falta!'}), BAD_REQUEST
+            return jsonify({'Erro': 'Token está em falta!'}), http_codes.BAD_REQUEST
 
         try:
 
@@ -44,11 +30,11 @@ def auth_user(func):
 
             if(decoded_token["expiration"] < str(datetime.utcnow())):
 
-                return jsonify({"Erro": "O Token expirou!"}), FORBIDDEN
+                return jsonify({"Erro": "O Token expirou!"}), http_codes.FORBIDDEN
 
         except Exception as e:
 
-            return jsonify({'Erro': str(e)}), UNAUTHORIZED
+            return jsonify({'Erro': str(e)}), http_codes.UNAUTHORIZED
         
         return func(*args, **kwargs)
     
@@ -59,7 +45,7 @@ def auth_user(func):
 @app.route("/")
 def hello_world():
 
-    return jsonify({"message": "Welcome To IOT API"}), OK
+    return jsonify({"message": "Welcome To IOT API"}), http_codes.OK
 
 # !!! LOGIN !!!
 @app.post("/login/")
@@ -71,76 +57,100 @@ def login():
 
     if not all(parameter in parameters for parameter in received_parameters):
 
-        return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+        return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
     query = '''SELECT * FROM login(%(email)s, %(password)s);'''
 
-    data = db_wrapper.generic_select(query, parameters)
+    response = db_wrapper.generic_select(query, parameters)
 
-    if data:
+    if response["code"] == http_codes.OK:
 
         token = jwt.encode({
-                    'id': data[0]["id"],
+                    'id': response["data"][0]["id"],
                     'expiration': str(datetime.utcnow() + timedelta(weeks=5))
                 }, os.environ["SECRET_KEY"])
 
-        return jsonify({'token': token}), OK
+        return jsonify({'token': token}), http_codes.OK
+    
+    elif response["code"] == http_codes.NOT_FOUND:
+
+        return jsonify({'message': 'Credênciais inválidas'}), http_codes.NOT_FOUND
     
     else:
 
-        return jsonify({'message': 'Erro no login.'}), INTERNAL_SERVER_ERROR
+        return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
 
 # !!! SYSTEM !!!
-@app.route("/system/<id>", methods=['GET', 'DELETE'])
+@app.route("/system/<id>/", methods=['GET', 'DELETE'])
 @app.route("/system/", methods=['GET', 'POST', 'PUT'])
 @auth_user
 def system(id = None):
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
 
     if request.method == 'GET':
 
         if id:
 
-            query = 'SELECT * FROM system_view(%(id)s);'
-            parameters = {"id": id}
-            data = db_wrapper.generic_select(query, parameters)
+            query = 'SELECT * FROM system_view(%(user_id)s, %(id)s);'
+            parameters = {"user_id": decoded_token['id'], "id": id}
+            response = db_wrapper.generic_select(query, parameters)
 
-            if data:
+            if response["code"] == 200:
 
-                data = data[0]
+                response["data"] = response["data"][0]
 
         else:
 
-            query = 'SELECT * FROM system_view;'
-            data = db_wrapper.generic_select(query)
+            query = 'SELECT * FROM system_view(%(user_id)s);'
+            parameters = {"user_id": decoded_token['id']}
+            response = db_wrapper.generic_select(query, parameters)
 
-        if not data:
+        if response["code"] == http_codes.OK:
 
-            return jsonify({'message': 'Nenhum sistema encontrado.'}), NOT_FOUND
+            return jsonify(response["data"]), http_codes.OK
 
-        return jsonify(data), OK
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+
+        else:
+            
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'POST':
 
         parameters = request.get_json()
 
-        received_parameters = ['location', 'property', 'owner_id']
+        received_parameters = ['location', 'property']
 
         if not all(parameter in parameters for parameter in received_parameters):
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         query = '''CALL system_insert(%(location)s, %(property)s, %(owner_id)s);'''
 
-        inserted = db_wrapper.generic_manipulation(query, parameters)
+        parameters.update({"owner_id": decoded_token['id']})
 
-        if inserted:
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-            return jsonify({'message': 'Inserido com sucesso'}), OK
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
         
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'PUT':
 
@@ -150,9 +160,9 @@ def system(id = None):
 
         if not all(parameter in parameters for parameter in received_parameters):
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
-        query = '''CALL system_update('''
+        query = '''CALL system_update(%(user_id)s, '''
 
         for parameter in parameters:
 
@@ -162,70 +172,101 @@ def system(id = None):
         
         query += ''');'''
 
-        updated = db_wrapper.generic_manipulation(query, parameters)
+        parameters.update({"user_id": decoded_token['id']})
 
-        if updated:
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-            return jsonify({'message': 'Atualizado com sucesso'}), OK
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
-
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+        
     elif request.method == 'DELETE': 
 
         if id:
 
-            query = '''CALL system_delete(%(id)s);'''
+            query = '''CALL system_delete(%(user_id)s, %(id)s);'''
 
-            parameters = {"id": id}
+            parameters = {"id": id, "user_id": decoded_token["id"]}
 
-            deleted = db_wrapper.generic_manipulation(query, parameters)
+            response = db_wrapper.generic_manipulation(query, parameters)
 
-            if deleted:
+            if response["code"] == http_codes.OK:
 
-                return jsonify({'message': 'Eliminado com sucesso'}), OK
-        
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
             else:
 
-                return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
-            
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
         else:
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
-    
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
     else:
 
-        return jsonify({'message': 'Metodo HTTP inválido'}), METHOD_NOT_ALLOWED
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
     
 # !!! SENSOR !!!
-@app.route("/sensor/<id>", methods=['GET', 'DELETE'])
+@app.route("/sensor/<id>/", methods=['GET', 'DELETE'])
 @app.route("/sensor/", methods=['GET', 'POST', 'PUT'])
 @auth_user
 def sensor(id = None):
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
 
     if request.method == 'GET':
 
         if id:
 
-            query = 'SELECT * FROM sensor_view(%(id)s);'
-            parameters = {"id": id}
-            data = db_wrapper.generic_select(query, parameters)
+            query = 'SELECT * FROM sensor_view(%(user_id)s, %(id)s);'
+            parameters = {"user_id": decoded_token['id'], "id": id}
+            response = db_wrapper.generic_select(query, parameters)
 
-            if data:
+            if response["code"] == 200:
 
-                data = data[0]
+                response["data"] = response["data"][0]
 
         else:
 
-            query = 'SELECT * FROM sensor_view;'
-            data = db_wrapper.generic_select(query)
+            query = 'SELECT * FROM sensor_view(%(user_id)s);'
+            parameters = {"user_id": decoded_token['id']}
+            response = db_wrapper.generic_select(query, parameters)
 
-        if not data:
+        if response["code"] == http_codes.OK:
 
-            return jsonify({'message': 'Nenhum sistema encontrado.'}), NOT_FOUND
+            return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
 
-        return jsonify(data), OK
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'POST':
 
@@ -235,19 +276,25 @@ def sensor(id = None):
 
         if not all(parameter in parameters for parameter in received_parameters):
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
-        query = '''CALL sensor_insert(%(sensor_type_id)s, %(system_id)s, %(inactivity_seconds)s);'''
+        query = '''CALL sensor_insert(%(user_id)s, %(sensor_type_id)s, %(system_id)s, %(inactivity_seconds)s);'''
 
-        inserted = db_wrapper.generic_manipulation(query, parameters)
+        parameters.update({"user_id": decoded_token['id']})
 
-        if inserted:
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-            return jsonify({'message': 'Inserido com sucesso'}), OK
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
         
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'PUT':
 
@@ -257,9 +304,9 @@ def sensor(id = None):
 
         if not all(parameter in parameters for parameter in received_parameters):
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
-        query = '''CALL sensor_update('''
+        query = '''CALL sensor_update(%(user_id)s,'''
 
         for parameter in parameters:
 
@@ -269,44 +316,62 @@ def sensor(id = None):
         
         query += ''');'''
 
-        updated = db_wrapper.generic_manipulation(query, parameters)
+        parameters.update({"user_id": decoded_token['id']})
 
-        if updated:
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-            return jsonify({'message': 'Atualizado com sucesso'}), OK
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'DELETE': 
 
         if id:
 
-            query = '''CALL sensor_delete(%(id)s);'''
+            query = '''CALL sensor_delete(%(user_id)s, %(id)s);'''
 
-            parameters = {"id": id}
+            parameters = {"id": id, "user_id": decoded_token['id']}
 
-            deleted = db_wrapper.generic_manipulation(query, parameters)
+            response = db_wrapper.generic_manipulation(query, parameters)
 
-            if deleted:
+            if response["code"] == http_codes.OK:
 
-                return jsonify({'message': 'Eliminado com sucesso'}), OK
-        
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
             else:
 
-                return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
             
         else:
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
     
     else:
 
-        return jsonify({'message': 'Metodo HTTP inválido'}), METHOD_NOT_ALLOWED
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
     
 # !!! SENSOR TYPE !!!
-@app.route("/sensor-type/<id>", methods=['GET', 'DELETE'])
+@app.route("/sensor-type/<id>/", methods=['GET', 'DELETE'])
 @app.route("/sensor-type/", methods=['GET', 'POST', 'PUT'])
 @auth_user
 def sensor_type(id = None):
@@ -317,22 +382,32 @@ def sensor_type(id = None):
 
             query = 'SELECT * FROM sensor_type_view(%(id)s);'
             parameters = {"id": id}
-            data = db_wrapper.generic_select(query, parameters)
+            response = db_wrapper.generic_select(query, parameters)
 
-            if data:
+            if response["code"] == 200:
 
-                data = data[0]
+                response["data"] = response["data"][0]
 
         else:
 
             query = 'SELECT * FROM sensor_type_view;'
-            data = db_wrapper.generic_select(query)
+            response = db_wrapper.generic_select(query)
 
-        if not data:
+        if response["code"] == http_codes.OK:
 
-            return jsonify({'message': 'Nenhum tipo de sensor encontrado.'}), NOT_FOUND
+            return jsonify(response["data"]), http_codes.OK
 
-        return jsonify(data), OK
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+
+        else:
+            
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'POST':
 
@@ -342,19 +417,23 @@ def sensor_type(id = None):
 
         if not all(parameter in parameters for parameter in received_parameters):
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         query = '''CALL sensor_type_insert(%(type)s);'''
 
-        inserted = db_wrapper.generic_manipulation(query, parameters)
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-        if inserted:
+        if response["code"] == http_codes.OK:
 
-            return jsonify({'message': 'Inserido com sucesso'}), OK
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
         
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
         
     elif request.method == 'PUT':
 
@@ -364,7 +443,7 @@ def sensor_type(id = None):
 
         if not all(parameter in parameters for parameter in received_parameters):
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         query = '''CALL sensor_type_update('''
 
@@ -376,15 +455,23 @@ def sensor_type(id = None):
         
         query += ''');'''
 
-        updated = db_wrapper.generic_manipulation(query, parameters)
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-        if updated:
+        if response["code"] == http_codes.OK:
 
-            return jsonify({'message': 'Atualizado com sucesso'}), OK
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'DELETE': 
 
@@ -394,74 +481,98 @@ def sensor_type(id = None):
 
             parameters = {"id": id}
 
-            deleted = db_wrapper.generic_manipulation(query, parameters)
+            response = db_wrapper.generic_manipulation(query, parameters)
 
-            if deleted:
+            if response["code"] == http_codes.OK:
 
-                return jsonify({'message': 'Eliminado com sucesso'}), OK
-        
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
             else:
 
-                return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
             
         else:
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
     
     else:
 
-        return jsonify({'message': 'Metodo HTTP inválido'}), METHOD_NOT_ALLOWED
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
     
-# !!! ACTUATOR !!!
-@app.route("/actuator/<id>", methods=['GET', 'DELETE'])
-@app.route("/actuator/", methods=['GET', 'POST', 'PUT'])
+# !!! SENSOR HISTORY !!!
+@app.route("/sensor-history/<id>/", methods=['GET', 'DELETE'])
+@app.route("/sensor-history/", methods=['GET', 'POST', 'PUT'])
 @auth_user
-def actuator(id = None):
+def sensor_history(id = None):
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
 
     if request.method == 'GET':
 
         if id:
 
-            query = 'SELECT * FROM actuator_view(%(id)s);'
-            parameters = {"id": id}
-            data = db_wrapper.generic_select(query, parameters)
-
-            if data:
-
-                data = data[0]
+            query = 'SELECT * FROM sensor_history_view(%(user_id)s, %(id)s);'
+            parameters = {"user_id": decoded_token["id"], "id": id}
+            response = db_wrapper.generic_select(query, parameters)
 
         else:
 
-            query = 'SELECT * FROM actuator_view;'
-            data = db_wrapper.generic_select(query)
+            query = 'SELECT * FROM sensor_history_view(%(user_id)s);'
+            parameters = {"user_id": decoded_token["id"]}
+            response = db_wrapper.generic_select(query, parameters)
 
-        if not data:
+        if response["code"] == http_codes.OK:
 
-            return jsonify({'message': 'Nenhum atuador encontrado.'}), NOT_FOUND
+            return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
 
-        return jsonify(data), OK
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'POST':
 
         parameters = request.get_json()
 
-        received_parameters = ['system_id', 'inactivity_seconds']
+        received_parameters = ['sensor_id', 'received_datetime', 'value']
 
         if not all(parameter in parameters for parameter in received_parameters):
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
-        query = '''CALL actuator_insert(%(system_id)s, %(inactivity_seconds)s);'''
+        query = '''CALL sensor_history_insert(%(user_id)s, %(sensor_id)s, %(received_datetime)s, %(value)s);'''
 
-        inserted = db_wrapper.generic_manipulation(query, parameters)
+        parameters.update({"user_id": decoded_token['id']})
 
-        if inserted:
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-            return jsonify({'message': 'Inserido com sucesso'}), OK
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
         
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
         
     elif request.method == 'PUT':
 
@@ -471,9 +582,9 @@ def actuator(id = None):
 
         if not all(parameter in parameters for parameter in received_parameters):
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
-        query = '''CALL actuator_update('''
+        query = '''CALL sensor_history_update(%(user_id)s,'''
 
         for parameter in parameters:
 
@@ -483,70 +594,858 @@ def actuator(id = None):
         
         query += ''');'''
 
-        updated = db_wrapper.generic_manipulation(query, parameters)
+        parameters.update({"user_id": decoded_token['id']})
 
-        if updated:
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-            return jsonify({'message': 'Atualizado com sucesso'}), OK
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
-
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+        
     elif request.method == 'DELETE': 
 
         if id:
 
-            query = '''CALL actuator_delete(%(id)s);'''
+            query = '''CALL sensor_history_delete(%(user_id)s, %(id)s);'''
 
-            parameters = {"id": id}
+            parameters = {"id": id, "user_id": decoded_token["id"]}
 
-            deleted = db_wrapper.generic_manipulation(query, parameters)
+            response = db_wrapper.generic_manipulation(query, parameters)
 
-            if deleted:
+            if response["code"] == http_codes.OK:
 
-                return jsonify({'message': 'Eliminado com sucesso'}), OK
-        
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
             else:
 
-                return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
             
         else:
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
     
     else:
 
-        return jsonify({'message': 'Metodo HTTP inválido'}), METHOD_NOT_ALLOWED
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
     
-# !!! USER !!!
-@app.route("/user/<id>", methods=['GET', 'DELETE'])
-@app.route("/user/", methods=['GET', 'POST', 'PUT'])
+# !!! ACTUATOR !!!
+@app.route("/actuator/<id>/", methods=['GET', 'DELETE'])
+@app.route("/actuator/", methods=['GET', 'POST', 'PUT'])
 @auth_user
-def user(id = None):
+def actuator(id = None):
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
 
     if request.method == 'GET':
 
         if id:
 
-            query = 'SELECT * FROM user_view(%(id)s);'
-            parameters = {"id": id}
-            data = db_wrapper.generic_select(query, parameters)
+            query = 'SELECT * FROM actuator_view(%(user_id)s, %(id)s);'
+            parameters = {"user_id": decoded_token["id"], "id": id}
+            response = db_wrapper.generic_select(query, parameters)
 
-            if data:
+            if response["code"] == http_codes.OK:
 
-                data = data[0]
+                response["data"] = response["data"][0]
 
         else:
 
-            query = 'SELECT * FROM user_view;'
-            data = db_wrapper.generic_select(query)
+            query = 'SELECT * FROM actuator_view(%(user_id)s);'
+            parameters = {"user_id": decoded_token["id"]}
+            response = db_wrapper.generic_select(query, parameters)
 
-        if not data:
+        if response["code"] == http_codes.OK:
 
-            return jsonify({'message': 'Nenhum utilizador encontrado.'}), NOT_FOUND
+            return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
 
-        return jsonify(data), OK
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'POST':
+
+        parameters = request.get_json()
+
+        received_parameters = ['system_id']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL actuator_insert(%(user_id)s, %(system_id)s);'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+        
+    elif request.method == 'PUT':
+
+        parameters = request.get_json()
+
+        received_parameters = ['id']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL actuator_update(%(user_id)s,'''
+
+        for parameter in parameters:
+
+            query += 'a_' + parameter + ' => %(' + parameter + ')s,'
+
+        query = query[:-1]
+        
+        query += ''');'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'DELETE': 
+
+        if id:
+
+            query = '''CALL actuator_delete(%(user_id)s, %(id)s);'''
+
+            parameters = {"id": id, "user_id": decoded_token["id"]}
+
+            response = db_wrapper.generic_manipulation(query, parameters)
+
+            if response["code"] == http_codes.OK:
+
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            else:
+
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+            
+        else:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+    
+    else:
+
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
+    
+# !!! ACTUATOR HISTORY !!!
+@app.route("/actuator-history/<id>/", methods=['GET', 'DELETE'])
+@app.route("/actuator-history/", methods=['GET', 'POST', 'PUT'])
+@auth_user
+def actuator_history(id = None):
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
+
+    if request.method == 'GET':
+
+        if id:
+
+            query = 'SELECT * FROM actuator_history_view(%(user_id)s, %(id)s);'
+            parameters = {"user_id": decoded_token["id"], "id": id}
+            response = db_wrapper.generic_select(query, parameters)
+
+        else:
+
+            query = 'SELECT * FROM actuator_history_view(%(user_id)s);'
+            parameters = {"user_id": decoded_token["id"]}
+            response = db_wrapper.generic_select(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'POST':
+
+        parameters = request.get_json()
+
+        received_parameters = ['actuator_id', 'action_datetime', 'action']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL actuator_history_insert(%(user_id)s, %(actuator_id)s, %(action_datetime)s, %(action)s);'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+        
+    elif request.method == 'PUT':
+
+        parameters = request.get_json()
+
+        received_parameters = ['id']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL actuator_history_update(%(user_id)s,'''
+
+        for parameter in parameters:
+
+            query += 'a_' + parameter + ' => %(' + parameter + ')s,'
+
+        query = query[:-1]
+        
+        query += ''');'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+        
+    elif request.method == 'DELETE': 
+
+        if id:
+
+            query = '''CALL actuator_history_delete(%(user_id)s, %(id)s);'''
+
+            parameters = {"id": id, "user_id": decoded_token["id"]}
+
+            response = db_wrapper.generic_manipulation(query, parameters)
+
+            if response["code"] == http_codes.OK:
+
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            else:
+
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+            
+        else:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+    
+    else:
+
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
+    
+# !!! ALERT !!!
+@app.route("/alert/<id>/", methods=['GET', 'DELETE'])
+@app.route("/alert/", methods=['GET', 'POST', 'PUT'])
+@auth_user
+def alert(id = None):
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
+
+    if request.method == 'GET':
+
+        if id:
+
+            query = 'SELECT * FROM alert_view(%(user_id)s, %(id)s);'
+            parameters = {"user_id": decoded_token["id"], "id": id}
+            response = db_wrapper.generic_select(query, parameters)
+
+            if response["code"] == 200:
+
+                response["data"] = response["data"][0]
+
+        else:
+
+            query = 'SELECT * FROM alert_view(%(user_id)s);'
+            parameters = {"user_id": decoded_token["id"]}
+            response = db_wrapper.generic_select(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'POST':
+
+        parameters = request.get_json()
+
+        received_parameters = ['sensor_id','rule_id', 'value', 'alert']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL alert_insert(%(user_id)s, %(sensor_id)s, %(rule_id)s, %(value)s, %(alert)s);'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'PUT':
+
+        parameters = request.get_json()
+
+        received_parameters = ['id']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL alert_update(%(user_id)s,'''
+
+        for parameter in parameters:
+
+            query += 'a_' + parameter + ' => %(' + parameter + ')s,'
+
+        query = query[:-1]
+        
+        query += ''');'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'DELETE': 
+
+        if id:
+
+            query = '''CALL alert_delete(%(user_id)s, %(id)s);'''
+
+            parameters = {"id": id, "user_id": decoded_token["id"]}
+
+            response = db_wrapper.generic_manipulation(query, parameters)
+
+            if response["code"] == http_codes.OK:
+
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            else:
+
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+            
+        else:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+    
+    else:
+
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
+    
+# !!! RULE !!!
+@app.get("/rule/<id>/")
+@app.get("/rule/")
+@auth_user
+def rule(id = None):
+
+    if id:
+
+        query = 'SELECT * FROM rule_view(%(id)s);'
+        parameters = {"id": id}
+        response = db_wrapper.generic_select(query, parameters)
+
+        if response["code"] == 200:
+
+            response["data"] = response["data"][0]
+
+    else:
+
+        query = 'SELECT * FROM rule_view;'
+        response = db_wrapper.generic_select(query)
+
+    if response["code"] == http_codes.OK:
+
+        return jsonify(response["data"]), http_codes.OK
+    
+    elif response["code"] == http_codes.FORBIDDEN:
+
+        return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+    
+    elif response["code"] == http_codes.NOT_FOUND:
+
+        return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+    
+    else:
+
+        return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+# !!! ALERT HISTORY !!!
+@app.route("/alert-history/<id>/", methods=['GET', 'DELETE'])
+@app.route("/alert-history/", methods=['GET', 'POST', 'PUT'])
+@auth_user
+def alert_history(id = None):
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
+
+    if request.method == 'GET':
+
+        if id:
+
+            query = 'SELECT * FROM alert_history_view(%(user_id)s, %(id)s);'
+            parameters = {"user_id": decoded_token["id"], "id": id}
+            response = db_wrapper.generic_select(query, parameters)
+
+            if response["code"] == 200:
+
+                response["data"] = response["data"][0]
+
+        else:
+
+            query = 'SELECT * FROM alert_history_view(%(user_id)s);'
+            parameters = {"user_id": decoded_token["id"]}
+            response = db_wrapper.generic_select(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'POST':
+
+        parameters = request.get_json()
+
+        received_parameters = ['alert_id','alert_datetime']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL alert_history_insert(%(user_id)s, %(alert_id)s, %(alert_datetime)s);'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'PUT':
+
+        parameters = request.get_json()
+
+        received_parameters = ['id']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL alert_history_update(%(user_id)s,'''
+
+        for parameter in parameters:
+
+            query += 'a_' + parameter + ' => %(' + parameter + ')s,'
+
+        query = query[:-1]
+        
+        query += ''');'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'DELETE': 
+
+        if id:
+
+            query = '''CALL alert_history_delete(%(user_id)s, %(id)s);'''
+
+            parameters = {"id": id, "user_id": decoded_token["id"]}
+
+            response = db_wrapper.generic_manipulation(query, parameters)
+
+            if response["code"] == http_codes.OK:
+
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            else:
+
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+            
+        else:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+    
+    else:
+
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
+
+# !!! ALERT USER !!!
+@app.route("/alert-user/<alert_history_id>/", methods=['GET', 'DELETE'])
+@app.route("/alert-user/", methods=['GET', 'POST', 'PUT'])
+@auth_user
+def alert_user(alert_history_id = None):
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
+
+    if request.method == 'GET':
+
+        if alert_history_id:
+
+            query = 'SELECT * FROM alert_user_view(%(alert_history_id)s, %(user_id)s);'
+            parameters = {"alert_hisotry_id": alert_history_id, "user_id": decoded_token["id"]}
+            response = db_wrapper.generic_select(query, parameters)
+
+            if response["code"] == 200:
+
+                response["data"] = response["data"][0]
+
+        else:
+
+            query = 'SELECT * FROM alert_user_view(%(user_id)s);'
+            parameters = {"user_id": decoded_token["id"]}
+            response = db_wrapper.generic_select(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'POST':
+
+        parameters = request.get_json()
+
+        received_parameters = ['alert_history_id', 'see_datetime']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL alert_user_insert(%(alert_history_id)s, %(user_id)s, %(see_datetime)s);'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'PUT':
+
+        parameters = request.get_json()
+
+        received_parameters = ['alert_history_id']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL alert_user_update(a_user_id => %(user_id)s,'''
+
+        for parameter in parameters:
+
+            query += 'a_' + parameter + ' => %(' + parameter + ')s,'
+
+        query = query[:-1]
+        
+        query += ''');'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'DELETE': 
+
+        if alert_history_id:
+
+            query = '''CALL alert_user_delete(%(owner_id)s, %(alert_history_id)s, %(user_id)s);'''
+
+            parameters = {"alert_history_id": alert_history_id, "owner_id": decoded_token["id"], "user_id": decoded_token["id"]}
+
+            response = db_wrapper.generic_manipulation(query, parameters)
+
+            if response["code"] == http_codes.OK:
+
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            else:
+
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+            
+        else:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+    
+    else:
+
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
+    
+# !!! USER !!!
+@app.route("/user/<id>/", methods=['GET', 'DELETE'])
+@app.route("/user/", methods=['GET', 'POST', 'PUT'])
+@auth_user
+def user(id = None):
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
+
+    if request.method == 'GET':
+
+        if id:
+
+            query = 'SELECT * FROM user_view(%(user_id)s, %(id)s);'
+            parameters = {"user_id": decoded_token["id"], "id": id}
+            response = db_wrapper.generic_select(query, parameters)
+
+        else:
+
+            query = 'SELECT * FROM user_view(%(id)s);'
+            parameters = {"id": decoded_token["id"]}
+            response = db_wrapper.generic_select(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            response["data"] = response["data"][0]
+
+            return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'POST':
 
@@ -556,31 +1455,29 @@ def user(id = None):
 
         if not all(parameter in parameters for parameter in received_parameters):
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         query = '''CALL user_insert(%(name)s, %(email)s, %(password)s);'''
 
-        inserted = db_wrapper.generic_manipulation(query, parameters)
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-        if inserted:
+        if response["code"] == http_codes.OK:
 
-            return jsonify({'message': 'Inserido com sucesso'}), OK
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
         
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'PUT':
 
         parameters = request.get_json()
 
-        received_parameters = ['id']
-
-        if not all(parameter in parameters for parameter in received_parameters):
-
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
-
-        query = '''CALL user_update('''
+        query = '''CALL user_update(%(user_id)s,'''
 
         for parameter in parameters:
 
@@ -590,15 +1487,25 @@ def user(id = None):
         
         query += ''');'''
 
-        updated = db_wrapper.generic_manipulation(query, parameters)
+        parameters.update({"user_id": decoded_token['id']})
 
-        if updated:
+        response = db_wrapper.generic_manipulation(query, parameters)
 
-            return jsonify({'message': 'Atualizado com sucesso'}), OK
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
         else:
 
-            return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
 
     elif request.method == 'DELETE': 
 
@@ -606,25 +1513,33 @@ def user(id = None):
 
             query = '''CALL user_delete(%(id)s);'''
 
-            parameters = {"id": id}
+            parameters = {"id": decoded_token["id"]}
 
-            deleted = db_wrapper.generic_manipulation(query, parameters)
+            response = db_wrapper.generic_manipulation(query, parameters)
 
-            if deleted:
+            if response["code"] == http_codes.OK:
 
-                return jsonify({'message': 'Eliminado com sucesso'}), OK
-        
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
             else:
 
-                return jsonify({'message': 'Erro no servidor.'}), INTERNAL_SERVER_ERROR
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
             
         else:
 
-            return jsonify({'message': 'Parâmetros em falta'}), BAD_REQUEST
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
     
     else:
 
-        return jsonify({'message': 'Metodo HTTP inválido'}), METHOD_NOT_ALLOWED
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
 
     
 

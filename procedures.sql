@@ -1,3 +1,19 @@
+/*CREATE EXTENSION pgcrypto;*/
+
+CREATE OR REPLACE PROCEDURE raise_exception(IN a_msg varchar(256), IN a_detail varchar(256), IN a_hint varchar(256))
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    RAISE EXCEPTION 
+    USING
+	MESSAGE = a_msg,
+    DETAIL = a_detail,
+    HINT = a_hint;
+
+END;
+$$;
+
 /* !!! INSERT !!!*/
 
 /* Procedimento para inserir um sistema */
@@ -14,10 +30,18 @@ END;
 $$;
 
 /* Procedimento para inserir um sensor */
-CREATE OR REPLACE PROCEDURE sensor_insert(IN a_sensor_type_id int, IN a_system_id int, IN a_inactivity_seconds numeric)
+CREATE OR REPLACE PROCEDURE sensor_insert(IN a_owner_id int, IN a_sensor_type_id int, IN a_system_id int, IN a_inactivity_seconds numeric)
 LANGUAGE plpgsql
 AS $$
 BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."System" 
+        WHERE "System".id = a_system_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     INSERT INTO public."Sensor" (sensor_type_id, system_id, inactivity_seconds)
     VALUES
@@ -39,37 +63,21 @@ BEGIN
 END;
 $$;
 
-/* Procedimento para inserir um actuator */
-CREATE OR REPLACE PROCEDURE actuator_insert(IN a_system_id int, IN a_inactivity_seconds numeric)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-
-    INSERT INTO public."Actuator" (system_id, inactivity_seconds)
-    VALUES
-    (a_system_id, a_inactivity_seconds);
-
-END;
-$$;
-
-/* Procedimento para inserir um actuatorHistory */
-CREATE OR REPLACE PROCEDURE actuator_history_insert(IN a_actuator_id int, a_action_datetime timestamp, IN a_action varchar(64))
-LANGUAGE plpgsql
-AS $$
-BEGIN
-
-    INSERT INTO public."ActuatorHistory" (actuator_id, action_datetime, action)
-    VALUES
-    (a_actuator_id, a_action_datetime, a_action);
-
-END;
-$$;
-
 /* Procedimento para inserir um sensorHistory */
-CREATE OR REPLACE PROCEDURE sensor_history_insert(IN a_sensor_id int, a_received_datetime timestamp, IN a_value varchar(256))
+CREATE OR REPLACE PROCEDURE sensor_history_insert(IN a_owner_id int, IN a_sensor_id int, IN a_received_datetime timestamp, IN a_value varchar(256))
 LANGUAGE plpgsql
 AS $$
 BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        WHERE "Sensor".id = a_sensor_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     INSERT INTO public."SensorHistory" (sensor_id, received_datetime, value)
     VALUES
@@ -78,24 +86,92 @@ BEGIN
 END;
 $$;
 
-/* Procedimento para inserir um alert */
-CREATE OR REPLACE PROCEDURE alert_insert(IN a_sensor_id int, a_rule timestamp, IN a_value varchar(256), IN alert varchar(256))
+/* Procedimento para inserir um actuator */
+CREATE OR REPLACE PROCEDURE actuator_insert(IN a_owner_id int, IN a_system_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    INSERT INTO public."Alert" (sensor_id, rule, value, alert)
+    IF (SELECT COUNT(*) 
+        FROM public."System" 
+        WHERE "System".id = a_system_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    INSERT INTO public."Actuator" (system_id)
     VALUES
-    (a_sensor_id, a_rule, a_value, a_alert);
+    (a_system_id);
+
+END;
+$$;
+
+/* Procedimento para inserir um actuatorHistory */
+CREATE OR REPLACE PROCEDURE actuator_history_insert(IN a_owner_id int, IN a_actuator_id int, a_action_datetime timestamp, IN a_action varchar(64))
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Actuator"
+        ON "Actuator".system_id = "System".id
+        WHERE "Actuator".id = a_actuator_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    INSERT INTO public."ActuatorHistory" (actuator_id, action_datetime, action)
+    VALUES
+    (a_actuator_id, a_action_datetime, a_action);
+
+END;
+$$;
+
+
+
+/* Procedimento para inserir um alert */
+CREATE OR REPLACE PROCEDURE alert_insert(IN a_owner_id int, IN a_sensor_id int, a_rule_id int, IN a_value varchar(256), IN a_alert varchar(256))
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        WHERE "Sensor".id = a_sensor_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    INSERT INTO public."Alert" (sensor_id, rule_id, value, alert)
+    VALUES
+    (a_sensor_id, a_rule_id, a_value, a_alert);
 
 END;
 $$;
 
 /* Procedimento para inserir um alertActuator */
-CREATE OR REPLACE PROCEDURE alert_actuator_insert(IN a_alert_id int, a_actuator_id int, IN a_action varchar(64))
+CREATE OR REPLACE PROCEDURE alert_actuator_insert(IN a_owner_id int, IN a_alert_id int, a_actuator_id int, IN a_action varchar(64))
 LANGUAGE plpgsql
 AS $$
 BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        WHERE "Alert".id = a_alert_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     INSERT INTO public."AlertActuator" (alert_id, actuator_id, action)
     VALUES
@@ -118,10 +194,18 @@ END;
 $$;
 
 /* Procedimento para inserir um systemUser */
-CREATE OR REPLACE PROCEDURE system_user_insert(IN a_system_id int, a_user_id int)
+CREATE OR REPLACE PROCEDURE system_user_insert(IN a_onwer_id int, IN a_system_id int, a_user_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        WHERE "System".id = a_system_id and "System".owner_id = a_onwer_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     INSERT INTO public."SystemUser" (system_id, user_id)
     VALUES
@@ -136,6 +220,22 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
 
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        INNER JOIN public."AlertHistory"
+        ON "AlertHistory".alert_id = "Alert".id
+        LEFT JOIN public."SystemUser"
+        ON "SystemUser".system_id = "System".id
+        WHERE "AlertHistory".id = a_alert_history_id and ("System".owner_id = a_user_id OR "SystemUser".user_id = a_user_id)) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
     INSERT INTO public."AlertUser" (alert_history_id, user_id, see_datetime)
     VALUES
     (a_alert_history_id, a_user_id, a_see_datetime);
@@ -144,12 +244,24 @@ END;
 $$;
 
 /* Procedimento para inserir um alertHistory */
-CREATE OR REPLACE PROCEDURE alert_history_insert(IN a_alert_id int, a_alert_datetime timestamp)
+CREATE OR REPLACE PROCEDURE alert_history_insert(IN a_owner_id int, IN a_alert_id int, a_alert_datetime timestamp)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    INSERT INTO public."AlertHistory" (a_alert_id, a_alert_datetime)
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        WHERE "Alert".id = a_alert_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    INSERT INTO public."AlertHistory" (alert_id, alert_datetime)
     VALUES
     (a_alert_id, a_alert_datetime);
 
@@ -159,26 +271,59 @@ $$;
 /* !!! UPDATE !!! */
 
 /* Procedimento para atualizar um sistema */
-CREATE OR REPLACE PROCEDURE system_update(IN a_id int, IN a_location varchar(256) DEFAULT NULL, a_property varchar(256) DEFAULT NULL, a_owner_id int DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE system_update(IN a_owner_id int, IN a_id int, IN a_location varchar(256) DEFAULT NULL, a_property varchar(256) DEFAULT NULL)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        WHERE "System".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        WHERE "System".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
     UPDATE public."System" 
     SET 
     location = COALESCE(a_location, location),
-    property = COALESCE(a_property, property),
-    owner_id = COALESCE(a_owner_id, owner_id)
+    property = COALESCE(a_property, property)
     WHERE id = a_id;
 
 END;
 $$;
 
 /* Procedimento para atualizar um sensor */
-CREATE OR REPLACE PROCEDURE sensor_update(IN a_id int, IN a_sensor_type_id int DEFAULT NULL, a_system_id int DEFAULT NULL, a_inactivity_seconds numeric DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE sensor_update(IN a_owner_id int, IN a_id int, IN a_sensor_type_id int DEFAULT NULL, a_system_id int DEFAULT NULL, a_inactivity_seconds numeric DEFAULT NULL)
 LANGUAGE plpgsql
 AS $$
 BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."Sensor"
+        WHERE "Sensor".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        WHERE "Sensor".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     UPDATE public."Sensor" 
     SET 
@@ -205,58 +350,139 @@ END;
 $$;
 
 /* Procedimento para atualizar um actuator */
-CREATE OR REPLACE PROCEDURE actuator_update(IN a_id int, IN a_system_id int DEFAULT NULL, IN a_inactivity_seconds numeric DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE actuator_update(IN a_onwer_id int, IN a_id int, IN a_system_id int DEFAULT NULL)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
+    IF (SELECT COUNT(*) 
+        FROM public."Actuator"
+        WHERE "Actuator".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Actuator"
+        ON "Actuator".system_id = "System".id
+        WHERE "Actuator".id = a_id and "System".owner_id = a_onwer_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
     UPDATE public."Actuator" 
     SET 
-    system_id = COALESCE(a_system_id, system_id),
-    inactivity_seconds = COALESCE(a_inactivity_seconds, inactivity_seconds)
+    system_id = COALESCE(a_system_id, system_id)
     WHERE id = a_id;
 
 END;
 $$;
 
 /* Procedimento para atualizar um actuatorHistory */
-CREATE OR REPLACE PROCEDURE actuator_history_update(IN a_actuator_id int, IN a_action_datetime timestamp, IN a_action varchar(64) DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE actuator_history_update(IN a_owner_id int, IN a_id int, IN a_actuator_id int DEFAULT NULL, IN a_action_datetime timestamp DEFAULT NULL, IN a_action varchar(64) DEFAULT NULL)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
+    IF (SELECT COUNT(*) 
+        FROM public."ActuatorHistory"
+        WHERE "ActuatorHistory".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Actuator"
+        ON "Actuator".system_id = "System".id
+        INNER JOIN public."ActuatorHistory"
+        ON "ActuatorHistory".actuator_id = "Actuator".id
+        WHERE "ActuatorHistory".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
     UPDATE public."ActuatorHistory" 
     SET 
+    actuator_id = COALESCE(a_actuator_id, actuator_id),
+    action_datetime = COALESCE(a_action_datetime, action_datetime),
     action = COALESCE(a_action, action)
-    WHERE actuator_id = a_actuator_id and action_datetime = a_action_datetime;
+    WHERE id = a_id;
 
 END;
 $$;
 
 /* Procedimento para atualizar um sensorHistory */
-CREATE OR REPLACE PROCEDURE sensor_history_update(IN a_sensor_id int, IN a_received_datetime timestamp, IN a_value varchar(256) DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE sensor_history_update(IN a_owner_id int, IN a_id int, IN a_sensor_id int DEFAULT NULL, IN a_received_datetime timestamp DEFAULT NULL, IN a_value varchar(256) DEFAULT NULL)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
+    IF (SELECT COUNT(*) 
+        FROM public."SensorHistory"
+        WHERE "SensorHistory".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."SensorHistory"
+        ON "SensorHistory".sensor_id = "Sensor".id
+        WHERE "SensorHistory".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
     UPDATE public."SensorHistory" 
     SET 
-    action = COALESCE(a_value, value)
-    WHERE sensor_id = a_sensor_id and received_datetime = a_received_datetime;
+    sensor_id = COALESCE(a_sensor_id, sensor_id),
+    received_datetime = COALESCE(a_received_datetime, received_datetime),
+    value = COALESCE(a_value, value)
+    WHERE id = a_id;
 
 END;
 $$;
 
 /* Procedimento para atualizar um alert */
-CREATE OR REPLACE PROCEDURE alert_update(IN a_id int, IN a_sensor_id int DEFAULT NULL, IN a_rule varchar(256) DEFAULT NULL, IN a_value varchar(256) DEFAULT NULL, IN a_alert varchar(256) DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE alert_update(IN a_owner_id int, IN a_id int, IN a_sensor_id int DEFAULT NULL, IN a_rule_id int DEFAULT NULL, IN a_value varchar(256) DEFAULT NULL, IN a_alert varchar(256) DEFAULT NULL)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
+    IF (SELECT COUNT(*) 
+        FROM public."Alert"
+        WHERE "Alert".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        WHERE "Alert".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
     UPDATE public."Alert" 
     SET 
     sensor_id = COALESCE(a_sensor_id, sensor_id),
-    rule = COALESCE(a_rule, rule),
+    rule_id = COALESCE(a_rule_id, rule_id),
     value = COALESCE(a_value, value),
     alert = COALESCE(a_alert, alert)
     WHERE id = a_id ;
@@ -265,10 +491,30 @@ END;
 $$;
 
 /* Procedimento para atualizar um alertActuator */
-CREATE OR REPLACE PROCEDURE alert_actuator_update(IN a_alert_id int, IN a_actuator_id int, IN a_action varchar(64) DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE alert_actuator_update(IN owner_id int, IN a_alert_id int, IN a_actuator_id int, IN a_action varchar(64) DEFAULT NULL)
 LANGUAGE plpgsql
 AS $$
 BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."AlertActuator"
+        WHERE "AlertActuator".alert_id = a_alert_id and "AlertActuator".actuator_id = a_actuator_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        WHERE "AlertActuator".alert_id = a_alert_id and "AlertActuator".actuator_id = a_actuator_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     UPDATE public."AlertActuator" 
     SET 
@@ -284,6 +530,14 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
 
+    IF (SELECT COUNT(*) 
+        FROM public."User"
+        WHERE "User".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
     UPDATE public."User" 
     SET 
     name = COALESCE(a_name, name),
@@ -295,10 +549,34 @@ END;
 $$;
 
 /* Procedimento para atualizar um alertUser */
-CREATE OR REPLACE PROCEDURE alert_user_update(IN a_alert_history_id int, IN a_user_id int, IN see_datetime timestamp DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE alert_user_update(IN a_alert_history_id int, IN a_user_id int, IN a_see_datetime timestamp DEFAULT NULL)
 LANGUAGE plpgsql
 AS $$
 BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."AlertUser"
+        WHERE "AlertUser".alert_history_id = a_alert_history_id and "AlertUser".user_id = a_user_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        INNER JOIN public."AlertHistory"
+        ON "AlertHistory".alert_id = "Alert".id
+        INNER JOIN public."AlertUser"
+        ON "AlertUser".alert_history_id = "AlertHistory".id
+        WHERE "AlertUser".alert_history_id = a_alert_history_id and "AlertUser".user_id = a_user_id and "System".owner_id = a_user_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     UPDATE public."AlertUser" 
     SET 
@@ -309,10 +587,32 @@ END;
 $$;
 
 /* Procedimento para inserir um alertHistory */
-CREATE OR REPLACE PROCEDURE alert_history_update(IN a_id int, IN a_alert_id int DEFAULT NULL, a_alert_datetime timestamp DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE alert_history_update(IN a_owner_id int, IN a_id int, IN a_alert_id int DEFAULT NULL, a_alert_datetime timestamp DEFAULT NULL)
 LANGUAGE plpgsql
 AS $$
 BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."AlertHistory"
+        WHERE "AlertHistory".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        INNER JOIN public."AlertHistory"
+        ON "AlertHistory".alert_id = "Alert".id
+        WHERE "AlertHistory".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     UPDATE public."AlertHistory" 
     SET 
@@ -326,14 +626,26 @@ $$;
 /* !!! DELETE !!! */
 
 /* Procedimento para eliminar um sistema */
-CREATE OR REPLACE PROCEDURE system_delete(IN a_id int)
+CREATE OR REPLACE PROCEDURE system_delete(IN a_owner_id int, IN a_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    CALL sensor_delete(a_system_id => a_id);
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        WHERE "System".id = a_id) = 0 THEN
 
-    CALL actuator_delete(a_system_id => a_id);
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        WHERE "System".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     DELETE FROM public."System"
     WHERE id = a_id;
@@ -342,22 +654,31 @@ END;
 $$;
 
 /* Procedimento para eliminar um sensor */
-CREATE OR REPLACE PROCEDURE sensor_delete(IN a_id int DEFAULT NULL, IN a_system_id int DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE sensor_delete(IN a_owner_id int, IN a_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    IF a_system_id IS NULL THEN
+    IF (SELECT COUNT(*) 
+        FROM public."Sensor"
+        WHERE "Sensor".id = a_id) = 0 THEN
 
-        DELETE FROM public."Sensor"
-        WHERE id = a_id;
-
-    ELSIF a_id IS NULL THEN
-
-        DELETE FROM public."Sensor"
-        WHERE system_id = a_system_id;
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
 
     END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        WHERE "Sensor".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    DELETE FROM public."Sensor"
+    WHERE id = a_id;
 
 END;
 $$;
@@ -375,79 +696,124 @@ END;
 $$;
 
 /* Procedimento para eliminar um actuator */
-CREATE OR REPLACE PROCEDURE actuator_delete(IN a_id int DEFAULT NULL, IN a_system_id int DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE actuator_delete(IN a_owner_id int, IN a_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    IF a_system_id IS NULL THEN
+    IF (SELECT COUNT(*) 
+        FROM public."Actuator"
+        WHERE "Actuator".id = a_id) = 0 THEN
 
-        DELETE FROM public."Actuator"
-        WHERE id = a_id;
-
-    ELSIF a_id IS NULL THEN
-        
-        DELETE FROM public."Actuator"
-        WHERE system_id = a_system_id;
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
 
     END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Actuator"
+        ON "Actuator".system_id = "System".id
+        WHERE "Actuator".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    DELETE FROM public."Actuator"
+    WHERE id = a_id;
 
 END;
 $$;
 
 /* Procedimento para eliminar um actuatorHistory */
-CREATE OR REPLACE PROCEDURE actuator_history_delete(IN a_actuator_id int DEFAULT NULL, IN a_action_datetime timestamp DEFAULT NULL, a_system_id int DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE actuator_history_delete(IN a_owner_id int, IN a_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    IF a_action_datetime IS NULL AND a_actuator_id IS NOT NULL THEN
+    IF (SELECT COUNT(*) 
+        FROM public."ActuatorHistory"
+        WHERE "ActuatorHistory".id = a_id) = 0 THEN
 
-        DELETE FROM public."ActuatorHistory"
-        WHERE actuator_id = a_actuator_id;
-
-    ELSIF a_action_datetime IS NOT NULL AND a_actuator_id IS NOT NULL THEN
-
-        DELETE FROM public."ActuatorHistory"
-        WHERE actuator_id = a_actuator_id and action_datetime = a_action_datetime;
-
-    ELSIF a_system_id IS NOT NULL THEN
-
-        DELETE FROM public."ActuatorHistory"
-        USING public."Actuator"
-        WHERE "Actuator".system_id = a_system_id AND "ActuatorHistory".actuator_id = "Actuator".id;
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
 
     END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Actuator"
+        ON "Actuator".system_id = "System".id
+        INNER JOIN public."ActuatorHistory"
+        ON "ActuatorHistory".actuator_id = "Actuator".id
+        WHERE "ActuatorHistory".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    DELETE FROM public."ActuatorHistory"
+    WHERE id = a_id;
 
 END;
 $$;
 
 /* Procedimento para eliminar um sensorHistory */
-CREATE OR REPLACE PROCEDURE sensor_history_delete(IN a_sensor_id int, IN a_received_datetime timestamp DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE sensor_history_delete(IN a_owner_id int, IN a_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    IF a_received_datetime IS NULL THEN
+    IF (SELECT COUNT(*) 
+        FROM public."SensorHistory"
+        WHERE "SensorHistory".id = a_id) = 0 THEN
 
-        DELETE FROM public."SensorHistory"
-        WHERE sensor_id = a_sensor_id;
-
-    ELSE
-
-        DELETE FROM public."SensorHistory"
-        WHERE sensor_id = a_sensor_id and received_datetime = a_received_datetime;
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
 
     END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "Sensor".id
+        INNER JOIN public."SensorHistory"
+        ON "SensorHistory".sensor_id = "Sensor".id
+        WHERE "SensorHistory".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    DELETE FROM public."SensorHistory"
+    WHERE id = a_id;
 
 END;
 $$;
 
 /* Procedimento para eliminar um alert */
-CREATE OR REPLACE PROCEDURE alert_delete(IN a_id int)
+CREATE OR REPLACE PROCEDURE alert_delete(IN a_owner_id int, IN a_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."Alert"
+        WHERE "Alert".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "Sensor".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        WHERE "Alert".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
 
     DELETE FROM public."Alert"
     WHERE id = a_id;
@@ -456,27 +822,37 @@ END;
 $$;
 
 /* Procedimento para eliminar um alertActuator */
-CREATE OR REPLACE PROCEDURE alert_actuator_delete(IN a_alert_id int DEFAULT NULL, IN a_actuator_id int DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE alert_actuator_delete(IN a_owner_id int, IN a_alert_id int, IN a_actuator_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    IF a_alert_id IS NULL THEN
+    IF (SELECT COUNT(*) 
+        FROM public."AlertActuator"
+        WHERE "AlertActuator".alert_id = a_alert_id and "AlertActuator".actuator_id = a_actuator_id) = 0 THEN
 
-        DELETE FROM public."AlertActuator"
-        WHERE actuator_id = a_actuator_id;
-
-    ELSIF a_actuator_id IS NULL THEN
-
-        DELETE FROM public."AlertActuator"
-        WHERE alert_id = a_alert_id;
-
-    ELSE  
-        
-        DELETE FROM public."AlertActuator"
-        WHERE alert_id = a_alert_id and actuator_id = a_actuator_id;
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
 
     END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        INNER JOIN public."Actuator"
+        ON "Actuator".system_id = "System".id
+        INNER JOIN public."AlertActuator"
+        ON "AlertActuator".actuator_id = "Actuator".id and "AlertActuator".alert_id = "Alert".id
+        WHERE "AlertActuator".alert_id = a_alert_id and "AlertActuator".actuator_id = a_actuator_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+        
+    DELETE FROM public."AlertActuator"
+    WHERE alert_id = a_alert_id and actuator_id = a_actuator_id;
 
 END;
 $$;
@@ -487,6 +863,14 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
 
+    IF (SELECT COUNT(*) 
+        FROM public."User"
+        WHERE "User".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
     DELETE FROM public."User"
     WHERE id = a_id;
 
@@ -494,53 +878,101 @@ END;
 $$;
 
 /* Procedimento para eliminar um systemUser */
-CREATE OR REPLACE PROCEDURE system_user_delete(IN a_system_id int DEFAULT NULL, IN a_user_id int DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE system_user_delete(IN a_owner_id int, IN a_system_id int, IN a_user_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    IF a_system_id IS NULL THEN
+    IF (SELECT COUNT(*) 
+        FROM public."SystemUser"
+        WHERE "SystemUser".system_id = a_system_id and "SystemUser".user_id = a_user_id) = 0 THEN
 
-        DELETE FROM public."SystemUser"
-        WHERE "SystemUser".user_id = a_user_id;
-
-    ELSIF a_user_id IS NULL THEN
-
-        DELETE FROM public."SystemUser"
-        WHERE "SystemUser".system_id = a_system_id;
-
-    ELSE
-
-        DELETE FROM public."SystemUser"
-        WHERE "SystemUser".system_id = a_system_id and "SystemUser".user_id = a_user_id;
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
 
     END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."SystemUser"
+        ON "SystemUser".system_id = "System".id
+        WHERE "SystemUser".system_id = a_system_id and "SystemUser".user_id = a_user_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    DELETE FROM public."SystemUser"
+    WHERE "SystemUser".system_id = a_system_id and "SystemUser".user_id = a_user_id;
 
 END;
 $$;
 
 /* Procedimento para eliminar um AlertUser */
-CREATE OR REPLACE PROCEDURE alert_user_delete(IN a_alert_history_id int DEFAULT NULL, IN a_user_id int DEFAULT NULL)
+CREATE OR REPLACE PROCEDURE alert_user_delete(IN a_owner_id int, IN a_alert_history_id int, IN a_user_id int)
 LANGUAGE plpgsql
 AS $$
 BEGIN
 
-    IF a_alert_history_id IS NULL THEN
+    IF (SELECT COUNT(*) 
+        FROM public."AlertUser"
+        WHERE "AlertUser".alert_history_id = a_alert_history_id and "AlertUser".user_id = a_user_id) = 0 THEN
 
-        DELETE FROM public."AlertUser"
-        WHERE user_id = a_user_id;
-
-    ELSIF a_user_id IS NULL THEN
-
-        DELETE FROM public."AlertUser"
-        WHERE alert_history_id = a_alert_history_id;
-
-    ELSE
-
-        DELETE FROM public."AlertUser"
-        WHERE alert_history_id = a_alert_history_id and user_id = a_user_id;
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
 
     END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        INNER JOIN public."AlertHistory"
+        ON "AlertHistory".alert_id = "Alert".id
+        INNER JOIN public."AlertUser"
+        ON "AlertUser".alert_history_id = "AlertHistory".id
+        WHERE "AlertUser".alert_history_id = a_alert_history_id and "AlertUser".user_id = a_user_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    DELETE FROM public."AlertUser"
+    WHERE alert_history_id = a_alert_history_id and user_id = a_user_id;
+
+END;
+$$;
+
+/* Procedimento para eliminar um AlertHistory */
+CREATE OR REPLACE PROCEDURE alert_history_delete(IN a_owner_id int, IN a_id int)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+    IF (SELECT COUNT(*) 
+        FROM public."AlertHistory"
+        WHERE "AlertHistory".id = a_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    IF (SELECT COUNT(*) 
+        FROM public."System"
+        INNER JOIN public."Sensor"
+        ON "Sensor".system_id = "System".id
+        INNER JOIN public."Alert"
+        ON "Alert".sensor_id = "Sensor".id
+        INNER JOIN public."AlertHistory"
+        ON "AlertHistory".alert_id = "Alert".id
+        WHERE "AlertHistory".id = a_id and "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    DELETE FROM public."AlertHistory"
+    WHERE id = a_id;
 
 END;
 $$;

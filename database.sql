@@ -28,32 +28,41 @@ CREATE TABLE IF NOT EXISTS "SensorType"
 CREATE TABLE IF NOT EXISTS "Actuator"
 (
     id serial NOT NULL,
-    system_id int NOT NULL,
-    inactivity_seconds numeric NOT NULL,
+    system_id int NOT NULL
     PRIMARY KEY (id)
 );
 
-CREATE TABLE IF NOT EXISTS "ActuatorHistory"
-(
-    actuator_id int NOT NULL,
-    action_datetime timestamp with time zone NOT NULL DEFAULT(now() at time zone 'utc'),
-    action character varying(64) NOT NULL,
-    PRIMARY KEY (actuator_id, action_datetime)
-);
-
-CREATE TABLE IF NOT EXISTS "SensorHistory"
-(
-    sensor_id int NOT NULL,
-    received_datetime timestamp with time zone NOT NULL DEFAULT(now() at time zone 'utc'),
-    value character varying(256) NOT NULL,
-    PRIMARY KEY (sensor_id, received_datetime)
-);
-
-CREATE TABLE IF NOT EXISTS "Alert"
+CREATE TABLE IF NOT EXISTS public."ActuatorHistory"
 (
     id serial NOT NULL,
-    sensor_id int NOT NULL,
-    rule character varying(256) NOT NULL,
+    actuator_id integer NOT NULL,
+    action_datetime timestamp with time zone NOT NULL DEFAULT(now() at time zone 'utc'),
+    action character varying(64) NOT NULL,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public."SensorHistory"
+(
+    id serial NOT NULL,
+    sensor_id integer NOT NULL,
+    received_datetime timestamp with time zone NOT NULL DEFAULT(now() at time zone 'utc'),
+    value character varying(256) NOT NULL,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public."Rule"
+(
+    id serial NOT NULL,
+    rule character varying(16) NOT NULL,
+    description character varying(256),
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public."Alert"
+(
+    id serial NOT NULL,
+    sensor_id integer NOT NULL,
+    rule_id integer NOT NULL,
     value character varying(256) NOT NULL,
     alert character varying(256) NOT NULL,
     PRIMARY KEY (id)
@@ -132,6 +141,10 @@ ALTER TABLE IF EXISTS "SensorHistory"
 ALTER TABLE IF EXISTS "Alert"
     ADD FOREIGN KEY (sensor_id)
     REFERENCES "Sensor" (id);
+
+ALTER TABLE IF EXISTS public."Alert"
+    ADD FOREIGN KEY (rule_id)
+    REFERENCES public."Rule" (id);
 
 
 ALTER TABLE IF EXISTS "AlertActuator"
