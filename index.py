@@ -2,7 +2,8 @@ from flask import Flask, jsonify, request
 import db_wrapper, jwt 
 from functools import wraps
 from datetime import datetime, timedelta
-import os, env, http_codes
+import os, http_codes
+#import env
 
 app = Flask(__name__)
 
