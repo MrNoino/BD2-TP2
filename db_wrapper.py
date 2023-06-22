@@ -1,5 +1,6 @@
 import  psycopg2, psycopg2.extras
-import os, db_env, http_codes
+import os, http_codes
+#import db_env
 
 def generic_select(query, parameters = None):
 
