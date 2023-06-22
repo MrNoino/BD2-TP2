@@ -111,6 +111,10 @@ def system(id = None):
         if response["code"] == http_codes.OK:
 
             return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         elif response["code"] == http_codes.NOT_FOUND:
 
@@ -143,6 +147,10 @@ def system(id = None):
         if response["code"] == http_codes.OK:
 
             return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
         
         elif response["code"] == http_codes.FORBIDDEN:
 
@@ -180,6 +188,10 @@ def system(id = None):
 
             return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
@@ -206,6 +218,10 @@ def system(id = None):
 
                 return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
             
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+            
             elif response["code"] == http_codes.FORBIDDEN:
 
                 return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
@@ -225,6 +241,154 @@ def system(id = None):
 
         return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
     
+# !!! SYSTEM USER!!!
+@app.route("/system-user/", methods=['GET', 'POST', 'DELETE'])
+@auth_user
+def system_user():
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
+
+    if request.method == 'GET':
+
+        parameters = request.get_json(silent=True)
+
+        if parameters and "system_id" in parameters and "user_id" in parameters:
+
+            query = 'SELECT * FROM system_user_view(%(owner_id)s, %(system_id)s, %(user_id)s);'
+            parameters = {"owner_id": decoded_token['id'], "system_id": parameters["system_id"], "user_id": parameters["user_id"]}
+            response = db_wrapper.generic_select(query, parameters)
+
+            if response["code"] == 200:
+
+                response["data"] = response["data"][0]
+
+        else:
+
+            query = 'SELECT * FROM system_user_view(%(owner_id)s);'
+            parameters = {"owner_id": decoded_token['id']}
+            response = db_wrapper.generic_select(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify(response["data"]), http_codes.OK
+
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+
+        else:
+            
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'POST':
+
+        parameters = request.get_json()
+
+        received_parameters = ['system_id', 'user_id']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL system_user_insert(%(owner_id)s, %(system_id)s, %(user_id)s);'''
+
+        parameters.update({"owner_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'DELETE': 
+
+        parameters = request.get_json(silent=True)
+
+        if parameters and "system_id" in parameters and "user_id" in parameters:
+
+            query = '''CALL system_user_delete(%(owner_id)s, %(system_id)s, %(user_id)s);'''
+
+            parameters = {"owner_id": decoded_token["id"], "system_id": parameters["system_id"], "user_id": parameters["user_id"]}
+
+            response = db_wrapper.generic_manipulation(query, parameters)
+
+            if response["code"] == http_codes.OK:
+
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+            
+            else:
+
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+        else:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
+    else:
+
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
+
+# !!! SYSTEM INACTIVITY !!!
+@app.get("/system-inactivity/<system_id>/")
+@auth_user
+def system_inactivity(system_id = None):
+
+    parameters = request.get_json(silent=True)
+
+    if system_id:
+
+        query = 'SELECT * FROM verify_system_inactivity(%(system_id)s);'
+        parameters = {"system_id": system_id}
+        response = db_wrapper.generic_select(query, parameters)
+
+    else:
+
+        return jsonify({"message": "Pedido mal formado"}), http_codes.BAD_REQUEST
+
+    if response["code"] == http_codes.OK:
+
+        return jsonify({"message": "O sistema está ativo"}), http_codes.OK
+    
+    if response["code"] == http_codes.SERVICE_UNAVAILABLE:
+
+        return jsonify({"message": "Foi detetado inactividade no sistema"}), http_codes.SERVICE_UNAVAILABLE
+
+    else:
+        
+        return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
 # !!! SENSOR !!!
 @app.route("/sensor/<id>/", methods=['GET', 'DELETE'])
 @app.route("/sensor/", methods=['GET', 'POST', 'PUT'])
@@ -264,6 +428,10 @@ def sensor(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -291,6 +459,10 @@ def sensor(id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         else:
 
@@ -332,6 +504,10 @@ def sensor(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -357,6 +533,10 @@ def sensor(id = None):
             elif response["code"] == http_codes.NOT_FOUND:
 
                 return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
             
             else:
 
@@ -404,6 +584,10 @@ def sensor_type(id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         else:
             
@@ -430,6 +614,10 @@ def sensor_type(id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         else:
 
@@ -469,6 +657,10 @@ def sensor_type(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -494,6 +686,10 @@ def sensor_type(id = None):
             elif response["code"] == http_codes.NOT_FOUND:
 
                 return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
             
             else:
 
@@ -569,6 +765,10 @@ def sensor_history(id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST 
 
         else:
 
@@ -687,6 +887,10 @@ def actuator(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -714,6 +918,10 @@ def actuator(id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         else:
 
@@ -755,6 +963,10 @@ def actuator(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -780,6 +992,10 @@ def actuator(id = None):
             elif response["code"] == http_codes.NOT_FOUND:
 
                 return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
             
             else:
 
@@ -828,6 +1044,10 @@ def actuator_history(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -855,6 +1075,10 @@ def actuator_history(id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         else:
 
@@ -896,6 +1120,10 @@ def actuator_history(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -921,6 +1149,10 @@ def actuator_history(id = None):
             elif response["code"] == http_codes.NOT_FOUND:
 
                 return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
             
             else:
 
@@ -973,6 +1205,10 @@ def alert(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1000,6 +1236,10 @@ def alert(id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         else:
 
@@ -1041,6 +1281,10 @@ def alert(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1066,6 +1310,10 @@ def alert(id = None):
             elif response["code"] == http_codes.NOT_FOUND:
 
                 return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
             
             else:
 
@@ -1112,6 +1360,10 @@ def rule(id = None):
 
         return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
     
+    elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+    
     else:
 
         return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1155,6 +1407,10 @@ def alert_history(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1182,6 +1438,10 @@ def alert_history(id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         else:
 
@@ -1223,6 +1483,10 @@ def alert_history(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1248,6 +1512,10 @@ def alert_history(id = None):
             elif response["code"] == http_codes.NOT_FOUND:
 
                 return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
             
             else:
 
@@ -1300,6 +1568,10 @@ def alert_user(alert_history_id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1327,6 +1599,10 @@ def alert_user(alert_history_id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         else:
 
@@ -1368,6 +1644,10 @@ def alert_user(alert_history_id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1394,6 +1674,10 @@ def alert_user(alert_history_id = None):
 
                 return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
             
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+            
             else:
 
                 return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1406,6 +1690,170 @@ def alert_user(alert_history_id = None):
 
         return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
     
+# !!! ALERT ACTUATOR !!!
+@app.route("/alert-actuator/", methods=['GET', 'POST', 'PUT', 'DELETE'])
+@auth_user
+def alert_actuator():
+
+    token = request.headers["Authorization"].split(" ")[1]
+    decoded_token = jwt.decode(token, os.environ["SECRET_KEY"], algorithms=["HS256"])
+
+    if request.method == 'GET':
+
+        parameters = request.get_json(silent=True)
+
+        if parameters and "alert_id" in parameters and "actuator_id" in parameters:
+
+            query = 'SELECT * FROM alert_actuator_view(%(user_id)s, %(alert_id)s, %(actuator_id)s);'
+            parameters = {"user_id": decoded_token["id"], "alert_id": parameters["alert_id"], "actuator_id": parameters["actuator_id"]}
+            response = db_wrapper.generic_select(query, parameters)
+
+            if response["code"] == 200:
+
+                response["data"] = response["data"][0]
+
+        else:
+
+            print("else")
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify(response["data"]), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'POST':
+
+        parameters = request.get_json()
+
+        received_parameters = ['alert_id', 'actuator_id', 'action']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL alert_actuator_insert(%(user_id)s, %(alert_id)s, %(actuator_id)s, %(action)s);'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Inserido com sucesso'}), http_codes.CREATED
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'PUT':
+
+        parameters = request.get_json()
+
+        received_parameters = ['alert_id', 'actuator_id']
+
+        if not all(parameter in parameters for parameter in received_parameters):
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+
+        query = '''CALL alert_actuator_update(%(user_id)s,'''
+
+        for parameter in parameters:
+
+            query += 'a_' + parameter + ' => %(' + parameter + ')s,'
+
+        query = query[:-1]
+        
+        query += ''');'''
+
+        parameters.update({"user_id": decoded_token['id']})
+
+        response = db_wrapper.generic_manipulation(query, parameters)
+
+        if response["code"] == http_codes.OK:
+
+            return jsonify({'message': 'Atualizado com sucesso'}), http_codes.OK
+        
+        elif response["code"] == http_codes.FORBIDDEN:
+
+            return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.NOT_FOUND:
+
+            return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+    elif request.method == 'DELETE':
+
+        parameters = request.get_json(silent=True)
+
+        if parameters and "alert_id" in parameters and "actuator_id" in parameters:
+
+            query = '''CALL alert_actuator_delete(%(user_id)s, %(alert_id)s, %(actuator_id)s);'''
+
+            parameters = {"user_id": decoded_token["id"], "alert_id": parameters["alert_id"], "actuator_id": parameters["actuator_id"]}
+
+            response = db_wrapper.generic_manipulation(query, parameters)
+
+            if response["code"] == http_codes.OK:
+
+                return jsonify({'message': 'Eliminado com sucesso'}), http_codes.OK
+            
+            elif response["code"] == http_codes.FORBIDDEN:
+
+                return jsonify({'message': 'Acesso negado'}), http_codes.FORBIDDEN
+            
+            elif response["code"] == http_codes.NOT_FOUND:
+
+                return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
+            
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+            
+            else:
+
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+            
+        else:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+    
+    else:
+
+        return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
+    
+
 # !!! USER !!!
 @app.route("/user/<id>/", methods=['GET', 'DELETE'])
 @app.route("/user/", methods=['GET', 'POST', 'PUT'])
@@ -1443,6 +1891,10 @@ def user(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1468,6 +1920,10 @@ def user(id = None):
         elif response["code"] == http_codes.FORBIDDEN:
 
             return jsonify({'message': 'Operação não permitida'}), http_codes.FORBIDDEN
+        
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
 
         else:
 
@@ -1503,6 +1959,10 @@ def user(id = None):
 
             return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
         
+        elif response["code"] == http_codes.BAD_REQUEST:
+
+            return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+        
         else:
 
             return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1529,6 +1989,10 @@ def user(id = None):
 
                 return jsonify({'message': 'Não encontrado'}), http_codes.NOT_FOUND
             
+            elif response["code"] == http_codes.BAD_REQUEST:
+
+                return jsonify({'message': 'Pedido mal formado'}), http_codes.BAD_REQUEST
+            
             else:
 
                 return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
@@ -1541,7 +2005,48 @@ def user(id = None):
 
         return jsonify({'message': 'Metodo HTTP inválido'}), http_codes.METHOD_NOT_ALLOWED
 
+# !!! STATISTICS !!!
+@app.get("/statistics/")
+@auth_user
+def statistics():
+
+    query = '''CALL refresh_materialized_views();
+                SELECT * FROM system_more_alerts;'''
+    response = db_wrapper.generic_select(query)
+
+    if response["code"] == http_codes.OK:
+
+        data = {"system_more_alerts": response["data"]}
+
+        query = 'SELECT * FROM alerts_today;'
+        response = db_wrapper.generic_select(query)
+
+        if response["code"] == http_codes.OK:
+
+            data.update({"alerts_today": response["data"]})
+
+            query = 'SELECT * FROM sensor_readings_one_hour;'
+            response = db_wrapper.generic_select(query)
+
+            if response["code"] == http_codes.OK:
+
+                data.update({"sensor_readings_one_hour": response["data"]})
+
+                return jsonify(data), http_codes.OK
+
+            else:
+
+                return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+            
+        else:
+
+            return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
     
+    else:
+
+        return jsonify({'message': 'Erro no servidor'}), http_codes.INTERNAL_SERVER_ERROR
+
+      
 
 if __name__ == "__main__":
     app.run()

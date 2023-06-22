@@ -35,6 +35,14 @@ def generic_select(query, parameters = None):
 
             return {'code': http_codes.NOT_FOUND}
         
+        elif '400' in error:
+
+            return {'code': http_codes.BAD_REQUEST}
+        
+        elif '503' in error:
+
+            return {'code': http_codes.SERVICE_UNAVAILABLE}
+        
         return {'code': http_codes.INTERNAL_SERVER_ERROR}
 
 
@@ -68,5 +76,9 @@ def generic_manipulation(query, parameters = None):
         elif '404' in error:
 
             return {'code': http_codes.NOT_FOUND}
+        
+        elif '400' in error:
+
+            return {'code': http_codes.BAD_REQUEST}
         
         return {'code': http_codes.INTERNAL_SERVER_ERROR}

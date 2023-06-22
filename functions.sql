@@ -17,7 +17,7 @@ CREATE OR REPLACE FUNCTION system_select(IN a_user_id int)
 RETURNS TABLE(id int, location varchar(256), property varchar(256), owner_id int)
 LANGUAGE PLPGSQL
 AS $$
-BEGIN 
+BEGIN
 
     RETURN QUERY SELECT "System".* 
             FROM public."System"
@@ -33,6 +33,12 @@ RETURNS TABLE(id int, location varchar(256), property varchar(256), owner_id int
 LANGUAGE PLPGSQL
 AS $$
 BEGIN
+
+    IF a_user_id IS NULL OR a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     IF (SELECT COUNT(*)
             FROM system_select(a_user_id, a_id)) = 0 THEN
@@ -53,6 +59,12 @@ LANGUAGE PLPGSQL
 AS $$
 BEGIN 
 
+    IF a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
     IF (SELECT COUNT(*)
             FROM system_select(a_user_id)) = 0 THEN
 
@@ -70,7 +82,13 @@ CREATE OR REPLACE FUNCTION sensor_view(IN a_user_id int)
 RETURNS TABLE(id int, sensor_type_id int, system_id int, inactivity_seconds numeric)
 LANGUAGE PLPGSQL
 AS $$
-BEGIN 
+BEGIN
+
+    IF a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT "Sensor".* 
             FROM public."Sensor"
@@ -106,6 +124,12 @@ LANGUAGE PLPGSQL
 AS $$
 BEGIN
 
+    IF a_user_id IS NULL OR a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
     IF (SELECT COUNT(*)
             FROM sensor_view sv
             WHERE sv.id = a_id) = 0 THEN
@@ -133,6 +157,12 @@ LANGUAGE PLPGSQL
 AS $$
 BEGIN
 
+    IF a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
     RETURN QUERY SELECT * 
             FROM public."SensorType"
             WHERE "SensorType".id = a_id;
@@ -145,6 +175,12 @@ RETURNS TABLE(id int, sensor_id int, received_datetime timestamp with time zone,
 LANGUAGE PLPGSQL
 AS $$
 BEGIN
+
+    IF a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT "SensorHistory".* 
             FROM public."SensorHistory"
@@ -184,6 +220,12 @@ LANGUAGE PLPGSQL
 AS $$
 BEGIN
 
+    IF a_user_id IS NULL OR a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
     IF (SELECT COUNT(*)
             FROM sensor_history_select(a_user_id, a_id)) = 0 THEN
 
@@ -202,6 +244,12 @@ RETURNS TABLE(id int, system_id int)
 LANGUAGE PLPGSQL
 AS $$
 BEGIN
+
+    IF a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT "Actuator".* 
             FROM public."Actuator"
@@ -237,6 +285,12 @@ LANGUAGE PLPGSQL
 AS $$
 BEGIN
 
+    IF a_user_id IS NULL OR a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
     IF (SELECT COUNT(*)
             FROM actuator_select(a_user_id, a_id)) = 0 THEN
 
@@ -255,6 +309,12 @@ RETURNS TABLE(id int, actuator_id int, action_datetime timestamp with time zone,
 LANGUAGE PLPGSQL
 AS $$
 BEGIN
+
+    IF a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT "ActuatorHistory".* 
             FROM public."ActuatorHistory"
@@ -294,6 +354,12 @@ LANGUAGE PLPGSQL
 AS $$
 BEGIN
 
+    IF a_user_id IS NULL OR a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
     IF (SELECT COUNT(*)
             FROM actuator_history_select(a_user_id, a_id)) = 0 THEN
 
@@ -312,6 +378,12 @@ RETURNS TABLE(id int, sensor_id int, rule_id int, value varchar(256), alert varc
 LANGUAGE PLPGSQL
 AS $$
 BEGIN 
+
+    IF a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT "Alert".* 
             FROM public."Alert"
@@ -349,7 +421,13 @@ CREATE OR REPLACE FUNCTION alert_view(IN a_user_id int, IN a_id int)
 RETURNS TABLE(id int, sensor_id int, rule_id int, value varchar(256), alert varchar(256))
 LANGUAGE PLPGSQL
 AS $$
-BEGIN 
+BEGIN
+
+    IF a_user_id IS NULL OR a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     IF (SELECT COUNT(*)
             FROM alert_select(a_user_id, a_id)) = 0 THEN
@@ -368,7 +446,13 @@ CREATE OR REPLACE FUNCTION rule_view(IN a_id int)
 RETURNS TABLE(id int, rule varchar(16), description varchar(256))
 LANGUAGE PLPGSQL
 AS $$
-BEGIN 
+BEGIN
+
+    IF a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT "Rule".* 
             FROM public."Rule"
@@ -393,7 +477,7 @@ BEGIN
             ON "System".id = "Sensor".system_id
             LEFT JOIN public."SystemUser"
             ON "SystemUser".system_id = "System".id
-            WHERE "AlertActuator".alert_id = COALESCE(a_alert_id, "AlertActuator".alert_id) and "AlertActuator".actuator_id = COALESCE(a_actuator_id, "AlertActuator".actuator_id)  and ("System".owner_id = a_user_id OR "SystemUser".user_id = a_user_id);
+            WHERE "AlertActuator".alert_id = a_alert_id and "AlertActuator".actuator_id = a_actuator_id  and ("System".owner_id = a_user_id OR "SystemUser".user_id = a_user_id);
 
 END;
 $$;
@@ -403,6 +487,20 @@ RETURNS TABLE(alert_id int, actuator_id int, action varchar(256))
 LANGUAGE PLPGSQL
 AS $$
 BEGIN 
+
+    IF a_user_id IS NULL OR a_alert_id IS NULL OR a_actuator_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
+    IF (SELECT COUNT(*)
+            FROM public."AlertActuator"
+            WHERE "AlertActuator".alert_id = a_alert_id and "AlertActuator".actuator_id = a_actuator_id) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
 
     IF (SELECT COUNT(*)
             FROM alert_actuator_select(a_user_id, a_alert_id, a_actuator_id)) = 0 THEN
@@ -421,7 +519,13 @@ CREATE OR REPLACE FUNCTION user_view(IN a_id int)
 RETURNS TABLE(id int, name varchar(256), email varchar(256))
 LANGUAGE PLPGSQL
 AS $$
-BEGIN 
+BEGIN
+
+    IF a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT "User".id, "User".name, "User".email
             FROM public."User"
@@ -451,7 +555,13 @@ CREATE OR REPLACE FUNCTION user_view(IN a_user_id int, IN a_id int)
 RETURNS TABLE(id int, name varchar(256), email varchar(256))
 LANGUAGE PLPGSQL
 AS $$
-BEGIN 
+BEGIN
+
+    IF a_user_id IS NULL OR a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     IF (SELECT COUNT(*)
             FROM user_select(a_user_id, a_id)) = 0 THEN
@@ -472,6 +582,12 @@ LANGUAGE PLPGSQL
 AS $$
 BEGIN
 
+    IF a_email IS NULL OR a_password IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
     RETURN QUERY SELECT "User".id, "User".name, "User".email 
             FROM public."User"
             WHERE "User".email = a_email and "User".password = crypt(a_password, "User".password);
@@ -479,28 +595,88 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION system_user_view(IN a_user_id int)
+CREATE OR REPLACE FUNCTION system_user_select(IN a_owner_id int)
 RETURNS TABLE(system_id int, user_id int)
 LANGUAGE PLPGSQL
 AS $$
 BEGIN 
 
-    RETURN QUERY SELECT * 
+    RETURN QUERY SELECT "SystemUser".* 
             FROM public."SystemUser"
-            WHERE "SystemUser".user_id = a_user_id;
+            INNER JOIN public."System"
+            ON "System".id = "SystemUser".system_id
+            WHERE "System".owner_id = a_owner_id;
 
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION system_user_view(IN a_user_id int, IN a_system_id int)
+CREATE OR REPLACE FUNCTION system_user_view(IN a_owner_id int)
+RETURNS TABLE(system_id int, user_id int)
+LANGUAGE PLPGSQL
+AS $$
+BEGIN
+
+    IF a_owner_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
+    IF (SELECT COUNT(*)
+            FROM public."System"
+            WHERE "System".owner_id = a_owner_id) = 0 THEN
+
+        CALL raise_exception('403', 'FORBIDDEN', 'Don''t have permissions');
+
+    END IF;
+
+    IF (SELECT COUNT(*)
+            FROM system_user_select(a_owner_id)) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    RETURN QUERY SELECT *
+            FROM system_user_select(a_owner_id);
+
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION system_user_select(IN a_system_id int, IN a_user_id int)
 RETURNS TABLE(system_id int, user_id int)
 LANGUAGE PLPGSQL
 AS $$
 BEGIN 
 
-    RETURN QUERY SELECT * 
+    RETURN QUERY SELECT "SystemUser".* 
             FROM public."SystemUser"
             WHERE "SystemUser".system_id = a_system_id and "SystemUser".user_id = a_user_id;
+
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION system_user_view(IN a_system_id int, IN a_user_id int)
+RETURNS TABLE(system_id int, user_id int)
+LANGUAGE PLPGSQL
+AS $$
+BEGIN
+
+    IF a_system_id IS NULL OR a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
+
+    IF (SELECT COUNT(*)
+            FROM system_user_select(a_system_id, a_user_id)) = 0 THEN
+
+        CALL raise_exception('404', 'NOT FOUND', 'Doesn''t exist');
+
+    END IF;
+
+    RETURN QUERY SELECT *
+            FROM system_user_select(a_system_id, a_user_id);
 
 END;
 $$;
@@ -509,7 +685,13 @@ CREATE OR REPLACE FUNCTION alert_user_view(IN a_user_id int)
 RETURNS TABLE(alert_id int, user_id int, see_datetime timestamp with time zone)
 LANGUAGE PLPGSQL
 AS $$
-BEGIN 
+BEGIN
+
+    IF a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT * 
             FROM public."AlertUser"
@@ -522,7 +704,13 @@ CREATE OR REPLACE FUNCTION alert_user_view(IN a_alert_id int, IN a_user_id int)
 RETURNS TABLE(alert_id int, user_id int, see_datetime timestamp with time zone)
 LANGUAGE PLPGSQL
 AS $$
-BEGIN 
+BEGIN
+
+    IF a_alert_id IS NULL OR a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT * 
             FROM public."AlertUser"
@@ -535,7 +723,13 @@ CREATE OR REPLACE FUNCTION alert_history_view(IN a_user_id int)
 RETURNS TABLE(id int, alert_id int, alert_datetime timestamp with time zone)
 LANGUAGE PLPGSQL
 AS $$
-BEGIN 
+BEGIN
+
+    IF a_user_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     RETURN QUERY SELECT "AlertHistory".* 
             FROM public."AlertHistory"
@@ -580,6 +774,12 @@ RETURNS TABLE(id int, alert_id int, alert_datetime timestamp with time zone)
 LANGUAGE PLPGSQL
 AS $$
 BEGIN
+
+    IF a_user_id IS NULL OR a_id IS NULL THEN
+
+        CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
+
+    END IF;
 
     IF (SELECT COUNT(*)
             FROM alert_history_select(a_user_id, a_id)) = 0 THEN
