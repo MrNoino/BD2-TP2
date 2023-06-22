@@ -1,4 +1,4 @@
-/*CREATE EXTENSION pgcrypto;*/
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE OR REPLACE PROCEDURE raise_exception(IN a_msg varchar(256), IN a_detail varchar(256), IN a_hint varchar(256))
 LANGUAGE plpgsql
