@@ -682,7 +682,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION alert_user_view(IN a_user_id int)
-RETURNS TABLE(alert_id int, user_id int, see_datetime timestamp with time zone)
+RETURNS TABLE(alert_history_id int, user_id int, see_datetime timestamp with time zone)
 LANGUAGE PLPGSQL
 AS $$
 BEGIN
@@ -701,7 +701,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION alert_user_view(IN a_alert_history_id int, IN a_user_id int)
-RETURNS TABLE(alert_id int, user_id int, see_datetime timestamp with time zone)
+RETURNS TABLE(alert_history_id int, user_id int, see_datetime timestamp with time zone)
 LANGUAGE PLPGSQL
 AS $$
 BEGIN

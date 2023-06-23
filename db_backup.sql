@@ -1501,7 +1501,7 @@ ALTER PROCEDURE public.alert_user_update(IN a_alert_history_id integer, IN a_use
 -- Name: alert_user_view(integer); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
-CREATE FUNCTION public.alert_user_view(a_user_id integer) RETURNS TABLE(alert_id integer, user_id integer, see_datetime timestamp with time zone)
+CREATE FUNCTION public.alert_user_view(a_user_id integer) RETURNS TABLE(alert_history_id integer, user_id integer, see_datetime timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -1527,7 +1527,7 @@ ALTER FUNCTION public.alert_user_view(a_user_id integer) OWNER TO a2020126392;
 -- Name: alert_user_view(integer, integer); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
-CREATE FUNCTION public.alert_user_view(a_alert_history_id integer, a_user_id integer) RETURNS TABLE(alert_id integer, user_id integer, see_datetime timestamp with time zone)
+CREATE FUNCTION public.alert_user_view(a_alert_history_id integer, a_user_id integer) RETURNS TABLE(alert_history_id integer, user_id integer, see_datetime timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
