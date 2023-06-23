@@ -14,7 +14,7 @@ VALUES
 ('Movimento'),
 ('Gás');
 
-CREATE EXTENSION pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 INSERT INTO public."User" (name, email, password)
 VALUES

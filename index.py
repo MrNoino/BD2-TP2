@@ -71,7 +71,7 @@ def login():
                     'expiration': str(datetime.utcnow() + timedelta(weeks=5))
                 }, os.environ["SECRET_KEY"])
 
-        return jsonify({'token': token}), http_codes.OK
+        return jsonify({'token': str(token)}), http_codes.OK
     
     elif response["code"] == http_codes.NOT_FOUND:
 
