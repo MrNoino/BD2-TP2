@@ -1532,7 +1532,7 @@ CREATE FUNCTION public.alert_user_view(a_alert_history_id integer, a_user_id int
     AS $$
 BEGIN
 
-    IF a_alert_id IS NULL OR a_user_id IS NULL THEN
+    IF a_alert_history_id IS NULL OR a_user_id IS NULL THEN
 
         CALL raise_exception('400', 'BAD REQUEST', 'Fields empty');
 
