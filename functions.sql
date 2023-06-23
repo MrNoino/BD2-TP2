@@ -700,7 +700,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION alert_user_view(IN a_alert_id int, IN a_user_id int)
+CREATE OR REPLACE FUNCTION alert_user_view(IN a_alert_history_id int, IN a_user_id int)
 RETURNS TABLE(alert_id int, user_id int, see_datetime timestamp with time zone)
 LANGUAGE PLPGSQL
 AS $$
@@ -714,7 +714,7 @@ BEGIN
 
     RETURN QUERY SELECT * 
             FROM public."AlertUser"
-            WHERE "AlertUser".alert_id = a_alert_id and "AlertUser".user_id = a_user_id;
+            WHERE "AlertUser".alert_history_id = a_alert_history_id and "AlertUser".user_id = a_user_id;
 
 END;
 $$;

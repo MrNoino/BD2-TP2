@@ -1527,7 +1527,7 @@ ALTER FUNCTION public.alert_user_view(a_user_id integer) OWNER TO a2020126392;
 -- Name: alert_user_view(integer, integer); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
-CREATE FUNCTION public.alert_user_view(a_alert_id integer, a_user_id integer) RETURNS TABLE(alert_id integer, user_id integer, see_datetime timestamp with time zone)
+CREATE FUNCTION public.alert_user_view(a_alert_history_id integer, a_user_id integer) RETURNS TABLE(alert_id integer, user_id integer, see_datetime timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -1540,7 +1540,7 @@ BEGIN
 
     RETURN QUERY SELECT * 
             FROM public."AlertUser"
-            WHERE "AlertUser".alert_id = a_alert_id and "AlertUser".user_id = a_user_id;
+            WHERE "AlertUser".alert_history_id = a_alert_history_id and "AlertUser".user_id = a_user_id;
 
 END;
 $$;
