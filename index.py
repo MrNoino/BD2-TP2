@@ -1544,7 +1544,7 @@ def alert_user(alert_history_id = None):
         if alert_history_id:
 
             query = 'SELECT * FROM alert_user_view(%(alert_history_id)s, %(user_id)s);'
-            parameters = {"alert_hisotry_id": alert_history_id, "user_id": decoded_token["id"]}
+            parameters = {"alert_history_id": alert_history_id, "user_id": decoded_token["id"]}
             response = db_wrapper.generic_select(query, parameters)
 
             if response["code"] == 200:
